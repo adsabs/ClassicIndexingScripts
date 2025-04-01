@@ -5,8 +5,8 @@
 
 script=`basename $0`
 docodes=/bin/true
-domirror=/bin/true
-domkop=/bin/true
+domirror=/bin/false
+domkop=/bin/false
 docmatch=/bin/true
 
 # writes an error message and exits
@@ -44,20 +44,19 @@ done
 indexer="$ADS_INDEX_SERVER"
 
 [ "$indexer" = `uname -n` ] || \
-    die "this script needs to be run on host $indexer"
+    warn "this script should preferentially be be run on host $indexer"
 
 if [ \( $# -lt 1 \) -o \( $# -gt 2 \) ] ; then
     echo "Usage: $script [--no-cache] [--no-codes] [--no-mirror] [--dryrun] db [master]" 1>&2
     exit 1
 fi
 
-
 date=`date +'%Y-%m-%d'`
 db=`echo "$1" | tr '[A-Z]' '[a-z]'`
-master=${2-/proj/ads/abstracts/$db/update/master.list}
-loaddir="/proj/ads/abstracts/$db/load/$date"
-indexdir="/proj/ads/abstracts/$db/index/done.$date"
-prevload=`readlink -f /proj/ads/abstracts/$db/load/current`
+master=${2-$ADS_ABSTRACTS/$db/update/master.list}
+loaddir="$ADS_ABSTRACTS/$db/load/$date"
+indexdir="$ADS_ABSTRACTS/$db/index/done.$date"
+prevload=`readlink -f $ADS_ABSTRACTS/$db/load/current`
 
 warn "this script was called as: $0 $@ on host $indexer"
 

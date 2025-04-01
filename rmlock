@@ -4,7 +4,7 @@
 #
 # Usage: mklock [-d lockdir] lockfile pid
 
-dir="/tmp"
+dir=${ADS_TMP-/tmp}
 p=`basename $0`
 
 die () {

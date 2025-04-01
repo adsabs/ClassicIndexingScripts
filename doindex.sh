@@ -64,7 +64,7 @@ export LC_ALL="C"
 export TMPDIR="$ADS_TMP"
 
 # this is the variable that controls whether the cache is used
-usecache=
+usecache=YES
 
 # these are the fields that we are indexing
 #fields="author affiliation object object_LPI object_IAU keyword pacs pacskwds title text"
@@ -119,26 +119,8 @@ if [ ! -d "$lastindex" ] ; then
 fi
 warn "indexing started"
 
-# generate list of directories for text mirroring
-(cd "$topdir/text" && /bin/ls -1d [A-Z][0-9][0-9] > dirs.list)
-
 mkdir -p $indexdir || die "cannot create $indexdir"
 mkdir "$indexdir/config" || die "cannot create $indexdir/config"
-
-if [ "x$usecache" = "xYES" ] ; then
-    # force the use of old cache
-    warn "forcing the re-use of cache from $lastindex"
-    rsync -a "$lastindex/config/." "$indexdir/config/." || \
-	die "error syncing $lastindex/config to $indexdir/config"
-else 
-    # XXX: sourcedir is used to fetch a specific version of the text parser
-    #	--sourcedir $dir \
-    setup_index_config.pl --targetdir "$indexdir/config" \
-	--db $db $fields || \
-	die "error setting up index config"
-    setup_author_syns.pl "$indexdir/config/author.syn" || \
-	die "error setting up author synonyms"
-fi
 
 # first copy the master list to the indexing directory
 orig_dir=`pwd`
@@ -275,94 +257,6 @@ fi
 # total number of documents
 ntot=`wc -l < bib2accno.list`
 
-# now create words files
-cut -f2 bib2accno.list | parsed2words.pl *.parsed || \
-    die "error running parsed2words"
-
-# create *_codes files out of *_codes.accnos files
-accno2codes.pl *_codes.accnos < bib2accno.list || \
-    die "error running accno2codes.pl"
-
-# create list of normalized authors and keywords
-norm_authors.pl < author.words | id2bib bib2accno.list > norm_authors.bib || \
-    warn "cannot create file norm_authors.bib"
-
-if [ "x$db" = "xast" ] ; then
-    # normalize keywords
-    /proj/ads/soft/articles/bin/kwnormalizer < keyword.words > \
-	norm_keywords.words || \
-	warn "error creating normalized keyword file norm_keywords.words"
-elif [ "x$db" = "xphy" ] ; then
-    perl -pe 's/\s*\;\s*/\t/g' pacskwds.words > norm_keywords.words || \
-	warn "error creating norm_keywords.words from pacskwds.words"
-fi
-
-# merge normalized keywords in file and create bibcode-norm keyword mapping
-if [ -s norm_keywords.words ] ; then 
-    /usr/bin/tr '[a-z]' '[A-Z]' < norm_keywords.words | \
-	sort -T . -n keyword.words - > keyword.words.tmp || \
-	warn "error sorting keyword.words and norm_keywords.words"
-    /bin/mv -f keyword.words.tmp keyword.words
-    id2bib bib2accno.list < norm_keywords.words > norm_keywords.bib || \
-	warn "error creating file norm_keywords.bib"
-    /bin/rm norm_keywords.words || \
-	warn "error removing file norm_keywords.words"
-else
-    /bin/touch norm_keywords.bib
-fi
-if [ -s pacs.words ] ; then
-    id2bib bib2accno.list < pacs.words > pacs.bib || \
-	warn "error creating file pacs.bib"
-    /bin/rm pacs.words || \
-	warn "error removing pacs.words"
-else
-    /bin/touch pacs.bib
-fi
-
-# this is used to create word clouds
-id2bib --uniq bib2accno.list < text.words > text.bib || \
-    warn "error creating text.bib"
-
-# create regular index files
-for file in *.words ; do
-    mkindex $file || \
-	die "error inverting file $file"
-done
-
-# deal with synonyms
-cp -pv ./config/*.syn . || die "copying synonym files"
-
-# create full-author synonyms from original file
-# XXX - 6/6/2011 AA 
-# add astronomy author index to enable author name 
-# synonym creation 
-[ "x$db" = "xast" ] || xtra_authors="/proj/ads/abstracts/ast/load/current/author.index"
-sort -fuo author.index author.index || die "error sorting author.index"
-mkfullsynonyms.pl author.syn author.index $xtra_authors > author.syn.full || \
-    die "creating full-author synonyms"
-[ -f author.syn.full ] || touch author.syn.full
-[ -f author.syn.auto ] || touch author.syn.auto
-merge_synonyms.pl author.syn.full author.syn.auto > author.syn || \
-    die "creating author.syn from author.syn.full and author.syn.auto"
-addsyns.pl *.index || die "adding synonyms"
-
-# now do some special processing for text and author files
-addstems.pl --configdir ./config title.index || \
-    warn "error adding stems to title.index, continuing"
-addstems.pl --configdir ./config text.index || \
-    warn "error adding stems to text.index, continuing"
-
-for file in *.index *_codes ; do
-    [ -f $file ] || continue
-    sort -fuo $file $file || die "cannot sort file $file"
-done
-addscore.pl $bytes --ntot $ntot *.index || \
-    die "adding word scores to index files"
-
-# now update frequency of title index with the frequency from text index
-changefreq.sh title.index text.index || \
-    die "changing frequency of title.index to text.index"
-
 # create files containing first and last update date
 lastupdate=`cut -f4 bib2accno.list | sort -unr | head -1`
 date +'%Y-%m-%d' -d "$lastupdate" > TIMESTAMP.endupdate
@@ -373,35 +267,8 @@ if [ -d "$lastload" -a -f "$lastload/TIMESTAMP.endupdate" ]; then
 	date +'%Y-%m-%d' -d "$priorupdate" > TIMESTAMP.startupdate
 fi
 
-# create word frequency file used for word cloud
-mkwordfreq.pl $bytes --thresh 2 --ntot $ntot --strip text.syn text.index > text.freq || \
-    die "error creating text.freq"
-sort -fuo text.freq text.freq || \
-    die "error sorting text.freq"
-mkwordfreq.pl $bytes --thresh 2 --ntot $ntot --strip title.syn title.index > title.freq || \
-    die "error creating title.freq"
-sort -fuo title.freq title.freq || \
-    die "error sorting title.freq"
-
-addcount.sh *.index bib2accno.list bibcodes.list.alt bibcodes.list.del || \
+addcount.sh bib2accno.list bibcodes.list.alt bibcodes.list.del || \
     die "error adding counts to index files"
-addcount.sh --lines *_codes || \
-    die "error adding line count to codes files"
-
-# create pair indexes
-#mkpairindex --hash-size 41943040 text.words || \
-#    die "creating text pair index"
-mkpairindex-full --partial-index --progress text.words  || \
-    die "creating text pair index"
-# AA as of June 2019 we need 40M key entries in pair index
-mkpairindex --hash-size 41943040  title.words || \
-    die "creating title pair index"
-warn "adding pair scores"
-addpairscore $bytes --ntot $ntot text_pairs.index title_pairs.index || \
-    die "adding score to text_pairs.index and title_pairs.index"
-
-mksoundex.sh author.index || \
-    die "creating author soundex file"
 
 # timestamp
 warn "creating index timestamp"
@@ -413,19 +280,11 @@ if [ -d $loaddir ] ; then
     /bin/rm -rf $loaddir || die "cannot remove old directory $loaddir"
 fi
 mkdir -p $loaddir || die "cannot create directory $loaddir"
-mv -v *.index *.list TIMESTAMP.* VERSION *_codes $loaddir || \
+mv -v TIMESTAMP.* VERSION $loaddir || \
     die "cannot move index files to $loaddir"
-cp -pv config/*.trans config/*.kill config/*.kill_sens $loaddir || \
-    die "cannot copy kill files to $loaddir"
+[ -f bib2accno.list ] && mv -v bib2accno.list $loaddir
 [ -f bibcodes.list.alt ] && mv -v bibcodes.list.alt $loaddir
 [ -f bibcodes.list.del ] && mv -v bibcodes.list.del $loaddir
-[ "$bytes" ] || echo 4 > "$loaddir/OFFSETS"
-
-warn "compressing words and parsed files"
-for file in *.words *.parsed *.sorted *.raw *.accnos ; do
-    [ -f $file ] || continue
-    gzip -v $file || die "cannot compress file $file"
-done
 
 # now make this the current index
 cd "$topdir/index"
@@ -460,14 +319,6 @@ fi
 warn "resetting symbolic link latest for current load dir"
 ln -s "$shortname" latest || \
     die "cannot link load dir $loaddir to latest"
-
-# now create MD5SUM, avoiding *codes files since they get
-# sometimes recreated after this is done
-warn "creating MD5 checksums in $loaddir"
-cd $loaddir
-/bin/ls -1 | grep -v 'codes$' | xargs md5sum > .MD5SUM || \
-    warn "could not generate .MD5SUM in $loaddir"
-mv -f .MD5SUM MD5SUM
 
 warn "index directory is $topdir/index/done.$date"
 warn "load directory is $loaddir"

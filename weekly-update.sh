@@ -8,6 +8,8 @@
 # AA 1/25/13
 
 script=`basename $0`
+fullscript=`readlink -f $0`
+dir=`dirname $fullscript`
 # writes an error message and exits
 die () {
     echo "$script: fatal error: $1 occurred at " `date` 1>&2
@@ -27,9 +29,7 @@ olderthan () {
 }
 
 [ "x$ADS_ENVIRONMENT" = "x" ] && eval `$HOME/.adsrc sh`
-indexer="$ADS_INDEX_SERVER"
-[ "$indexer" = `uname -n` ] || die "please run on $indexer"
-PATH=/proj/ads/soft/abs/absload/index/dev:$PATH
+PATH="$dir:$PATH"
 export PATH
 
 # first reindex astro and pre databases
@@ -62,16 +62,5 @@ for db in "phy" "gen" ; do
 	msg "$file $timestampf is not yet $days days old"
     fi
 done
-
-# now push the update to ADS 2.0
-msg "now pushing update to ADS 2.0"
-/proj/ads/soft/bin/update_ads2.sh || \
-    msg "warning: something may have gone wrong with ADS 2.0 update"
-
-# no need to mirror since the arXiv update takes care of that
-#mirrorlog="$ADS_TMP/mirror.log"
-#msg "mirroring codes"
-#/proj/ads/ads/mirror/local/bin/mirror sites=ALL dbs=ALL update=codes mkop=codes || \
-#    die "mirroring codes, see $mirrorlog"
 
 msg "ending script"
