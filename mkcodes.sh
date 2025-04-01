@@ -129,7 +129,8 @@ p=`basename $0`
 
 merge="YES"
 dorejects=
-dir=`dirname $0`
+fullscript=`readlink -f $0`
+dir=`dirname $fullscript`
 export PATH="$dir:$PATH"
 export TMPDIR=${ADS_TMP-/tmp}
 

@@ -1,0 +1,119 @@
+#!/usr/bin/env perl
+#
+# Guesses what new bibcode may correspond to an old one
+# based on bibcode similarities.  Run as a filter:
+#    guessbib.pl < list_in > list_out
+# where list_out consists of the original input in first column
+# followed by the changed bibcodes
+#
+# AA 7/26/05
+
+use strict;
+use ADS::Environment;
+use ADS::Abstracts::Biblooker;
+my $looker = ADS::Abstracts::Biblooker->new;
+use integer;
+
+select *STDERR; $| = 1; select *STDOUT; $| = 1;
+
+my $script = $0; $script =~ s:^.*/::;
+my @dbs = split(/\s+/,$ENV{ADS_DATABASES});
+my $absdir = $ENV{ADS_ABSTRACTS};
+my $bibre = qr/\d{4}[a-zA-Z].{13}((\w\b)|\.)/;
+my $cachebibs = 0;
+my $printall = 0;
+my $verbose = 0;
+
+my $usage = <<"EOF";
+Usage: $script [OPTIONS] FILE [...]
+Options:
+  --all            print both change and unchanged entries
+  --cachebibs      cache bibcode list in memory when checking them
+  --verbose        be verbose
+EOF
+    ;
+
+while (@ARGV and $ARGV[0] =~ /^\-./) {
+    my $s = shift(@ARGV);
+    if ($s eq '--help') {
+	die $usage;
+    } elsif ($s eq '--cachebibs') {
+	$cachebibs++;
+    } elsif ($s eq '--all') {
+	$printall++;
+    } elsif ($s eq '--verbose') {
+	$verbose++;
+    } else {
+	die "Unknown option `$s'\n$usage";
+    }
+}
+$looker = ADS::Abstracts::Biblooker->new(cache => $cachebibs,
+                                         debug => ($verbose > 4));
+
+
+while (<>) {
+    chop;
+    my $orig = $_;
+    warn "$script: input: $orig\n" if ($verbose > 1);
+    s/($bibre)/&guessbib($1)/ge;
+    if ($_ ne $orig or $printall) {
+	print $orig, "\t", $_, "\n";
+    }
+}
+
+sub guessbib {
+    my $bib = shift;
+    my ($newbib,$testbib);
+
+    # first see if the starting bibcode is valid
+    warn "$script: checking $bib\n" if ($verbose > 2);
+    if ($newbib = check_bibcode($bib)) {
+	return $newbib;
+    }
+
+    # then try dropping last character
+    $testbib = substr($bib,0,18);
+    warn "$script: checking $testbib\n" if ($verbose > 2);
+    if ($newbib = check_bibcode($testbib)) {
+	return $newbib;
+    }
+
+    # next look for undup characters in 13th column
+    if (substr($bib,13,1) =~ /[Q-Z]/) {
+	$testbib = $bib;
+	substr($testbib,13,1) = '.';
+	warn "$script: checking $testbib\n" if ($verbose > 2);
+	if ($newbib = check_bibcode($testbib)) {
+	    return $newbib;
+	}
+    }
+
+    # next see if the year is wrong by one 
+    my $year = substr($bib,0,4);
+    $testbib = sprintf("%04d%s", $year + 1, substr($bib,4));
+    warn "$script: checking $testbib\n" if ($verbose > 2);
+    if ($newbib = check_bibcode($testbib)) {
+	return $newbib;
+    }
+
+    $testbib = sprintf("%04d%s", $year - 1, substr($bib,4));
+    warn "$script: checking $testbib\n" if ($verbose > 2);
+    if ($newbib = check_bibcode($testbib)) {
+	return $newbib
+    }
+
+    warn "$script: warning: no replacement found for $bib\n" if ($verbose);
+    return $bib;
+}
+
+sub check_bibcode {
+    my $bibcode = shift;
+    warn "$script: looking up bibcode $bibcode...\n" if ($verbose > 3);
+    my @newbibs = $looker->look($bibcode);
+    warn "$script: found records: ", join(", ",@newbibs), "\n" if ($verbose > 3);
+    return undef unless (@newbibs);
+    return $newbibs[0] if ($#newbibs == 0);
+    warn "$script: warning: multiple matches for $bibcode: ", 
+    join(",",@newbibs), "\n" if ($verbose);
+    return undef;
+}

@@ -1,0 +1,174 @@
+#!/usr/bin/env perl
+#
+# Replaces deleted bibcodes with new ones
+# 
+# AA 6/9/05
+
+use strict;
+use ADS::Environment;
+use ADS::Abstracts::Biblooker;
+use integer;
+
+my $script = $0; $script =~ s:^.*/::;
+my @dbs = split(/\s+/,$ENV{ADS_DATABASES});
+my $absdir = $ENV{ADS_ABSTRACTS};
+my @files = ();
+
+# matches a 19-character bibcode NOT preceeded or followed
+# by a non-blank character (or start/end of line)
+my $bibre = qr/(?<!\S)\d{4}[a-zA-Z].{13}((\w\b)|\.)(?!\S)/;
+my $dobackup = 1;
+my $prefix = '';
+my $suffix = '.bck';
+my $looker;
+my $checkbibs = 0;
+my $cachebibs = 0;
+my $verbose = 0;
+my $changedonly = 0;
+
+my $usage = <<"EOF";
+Usage: $script [OPTIONS] FILE [...]
+Options:
+  --mapfile DEL    use DEL as the mapping file for updating bibcodes;
+                   the default is to use the deleted bibcodes list from
+                   all ADS databases 
+  --no-backup      disable backing up modified files
+  --changed-only   only output changed bibcodes
+  --checkbibs      check the validity of all bibcodes against global bibcode
+                   list and replace bibcodes as necessary
+  --cachebibs      cache bibcode list in memory when checking them
+  --prefix STRING  use STRING as a prefix when backing up files (default: '')
+  --suffix STRING  use STRING as a suffix when backing up files (default: $suffix)
+  --verbose        be verbose
+EOF
+    ;
+
+while (@ARGV and $ARGV[0] =~ /^\-./) {
+    my $s = shift(@ARGV);
+    if ($s eq '--help') {
+	die $usage;
+    } elsif ($s eq '--no-backup') {
+	$dobackup = 0;
+    } elsif ($s eq '--mapfile') {
+	push(@files,shift(@ARGV));
+    } elsif ($s eq '--prefix') {
+	$prefix = shift(@ARGV);
+    } elsif ($s eq '--suffix') {
+	$suffix = shift(@ARGV);
+    } elsif ($s eq '--checkbibs') {
+	$checkbibs++;
+    } elsif ($s eq '--cachebibs') {
+	$cachebibs++;
+    } elsif ($s eq '--changed-only') {
+	$changedonly++;
+    } elsif ($s eq '--verbose') {
+	$verbose++;
+    } else {
+	die "Unknown option `$s'\n$usage";
+    }
+}
+die $usage unless (@ARGV);
+$looker = ADS::Abstracts::Biblooker->new(cache => $cachebibs) if ($checkbibs);
+
+unless (@files) {
+    @files = map { my $f = "$absdir/". lc($_) . '/update/bibcodes.deleted';
+		   (-f $f) ? ($f) : () } @dbs;
+}
+
+
+my %old2new;
+my %deleted;
+while (@files) {
+    my $f = shift(@files);
+    open(my $fh, $f) or die "$script: cannot open file $f: $!";
+    while (<$fh>) {
+	my ($o,$n) = split;
+	next unless ($o =~ /\A$bibre\Z/);
+	if ($n =~ /\A$bibre\Z/) {
+	    # there is one-to-one correspondence between old and new bibcodes
+	    $old2new{$o} = $n;
+	} else {
+	    # these are just goners
+	    $deleted{$o}++;
+	}
+    }
+}
+
+warn "$script: read ", scalar(keys(%old2new)), " bibcode mappings\n";
+warn "$script: read ", scalar(keys(%deleted)), " deleted bibcodes\n";
+
+while (@ARGV) {
+    my $f = shift(@ARGV);
+    open(my $fi, $f) or die "$script: cannot open input file $f: $!";
+    my $ftmp;
+    if ($f eq '-') {
+	# stdin/stdout
+	$ftmp = '-';
+    } else {
+	$ftmp = "$f.tmp.$$";
+    }
+    open(my $fo,">$ftmp") or die "$script: cannot open output file $ftmp: $!";
+    my $changed = 0;
+    while (<$fi>) {
+	my $orig = $_;
+	my @dels;
+	# if bibcode is deleted, skip record
+	if (@dels = grep($deleted{$_},/($bibre)/g)) {
+	    $changed++;
+	    warn "$script: ", join(" ", @dels), ": deleted\n"
+		if ($verbose);
+	    next;
+	}
+	s/($bibre)/&changebib($1)/eg;
+	if ($_ ne $orig) {
+	    $changed++;
+	    print $fo $_;
+	} elsif (not $changedonly) {
+	    print $fo $_;
+	}
+    }
+    warn "$script: updated file $f ($changed modifications)\n" if ($changed);
+    next if ($ftmp eq '-');
+
+    if ($changed and $dobackup) {
+	rename($f,"$prefix$f$suffix") or 
+	    die "$script: cannot backup file $f to $prefix$f$suffix: $!";
+	rename($ftmp,$f) or die "$script: cannot rename file $ftmp to $f: $!";
+    } else {
+	unlink($ftmp);
+    }
+}
+
+sub changebib {
+    my $bib = shift;
+
+    if ($old2new{$bib}) {
+	warn "$script: $bib: replaced with $old2new{$bib}\n"
+	    if ($verbose);
+	$bib = $old2new{$bib};
+    }
+
+    # looker is defined if we are checking bibcode validity
+    return $bib unless ($looker);
+
+    if ($looker->canonical($bib)) {
+	return $bib;
+    }
+
+    # see if there is a bibcode with a different initial
+    my @new = $looker->look(substr($bib,0,-1));
+    if (@new) {
+	if (scalar(@new) == 1) {
+	    warn "$script: $bib: replaced with $new[0]\n"
+		if ($verbose);
+	    $bib = shift(@new);
+	} else {
+	    warn "$script: $bib: warning: multiple matches: ",
+	    join("; ",@new), "\n";
+	}
+    } else {
+	warn "$script: $bib: warning: unknown bibcode\n";
+    }
+
+    return $bib;
+}

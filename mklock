@@ -26,7 +26,7 @@ usage () {
     exit 1
 }
 
-dir=/tmp
+dir=${ADS_TMP-/tmp}
 try=0
 sleeptime=10
 retries=0
