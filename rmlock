@@ -1,0 +1,52 @@
+#!/bin/sh
+#
+# Removes lock file created by mklock
+#
+# Usage: mklock [-d lockdir] lockfile pid
+
+dir="/tmp"
+p=`basename $0`
+
+die () {
+    echo "$p: fatal error: $1 occurred at " `date` 1>&2
+    exit 1
+}
+warn () {
+    echo "$p: warning: $1" 1>&2
+}
+
+while [ $# -ne 0 ]; do
+    case "$1" in
+    -d)
+        shift
+        dir="$1"
+        ;;
+    -*)
+        usage "$p: unknown option \"$1\"" 1>&2
+        ;;
+    *) 
+        break
+        ;;
+    esac
+    shift
+done
+
+lf=`echo "$1" | sed -e "s/\//_/g"`
+pid="$2"
+
+[ -d $dir ] || die "directory $dir not found"
+[ "x$lf"  = "x" ] && die "no lockfile specified"
+[ "x$pid" = "x" ] && die "no pid specified"
+
+if [ -f "$dir/$lf" ] ; then
+    oldpid=`cat $dir/$lf`
+    if [ "x$oldpid" = "x$pid" ] ; then
+	/bin/rm -f "$dir/$lf" || die "cannot remove lock file $dir/$lf"
+    else 
+	warn "lockfile $dir/$lf not created by pid $pid, not removed"
+    fi
+else
+   warn "lock file $dir/$lf not found"
+fi
+
+exit 0

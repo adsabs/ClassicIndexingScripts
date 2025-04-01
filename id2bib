@@ -1,0 +1,65 @@
+#!/usr/bin/perl
+#
+# $Id$ 
+#
+# generates list of bibcode - keywords mapping from a *.words file
+# in the index directory
+#
+# Edample usage: 
+#    1. to create a list of bibcode-authors in a database:
+#       gunzip -c author.words.gz | ./id2bib.pl bib2accno.list > authors.bib
+#    2. to create a list of bibcode-author count in a database:
+#       gunzip -c author.words.gz | ./id2bib.pl --count bib2accno.list > authors.count
+#
+# $Log$
+#
+
+use strict;
+use integer;
+
+my @bib;
+my $count = 0;
+my $uniq = 0;
+my $script = $0;
+$script =~ s:^.*/::;
+my $usage = "Usage: $script [--count] [--uniq] bib2accno.list < author.words > authors.bib\n";
+
+if ($ARGV[0] and $ARGV[0] =~ /^--\w/) {
+    my $s = shift(@ARGV);
+    if ($s eq '--count') {
+	$count = shift(@ARGV);
+    } elsif ($s eq '--uniq') {
+	$uniq = 1;
+    } elsif ($s eq '--help') {
+        print "$usage\n";
+	exit(0);
+    } else {
+	die "$script: unrecognized option \"$s\"\n", $usage, "\n";
+    }
+}
+die $usage
+    unless ($#ARGV == 0);
+
+while (<>) {
+    my ($bib,$accno,$rest) = split;
+    next unless ($bib and $accno and $rest);
+    push(@bib,$bib);
+}
+
+warn "$script: read ", scalar(@bib), " entries from bib2accno\n";
+
+while (<STDIN>) {
+    chop;
+    my ($lineno,@rest) = split(/\t/);
+    $lineno += 0;
+    @rest = sort keys %{{ map { $_ => 1 } @rest }} if ($uniq);
+    if ($bib[$lineno]) {
+	if ($count) {
+	    print $bib[$lineno], "\t", scalar(@rest), "\n";
+	} else {
+	    print join("\t",$bib[$lineno],@rest), "\n";
+	}
+    } else {
+	warn "$script: no bibcode defined for lineno $lineno\n";
+    }
+}

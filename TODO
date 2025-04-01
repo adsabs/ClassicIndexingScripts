@@ -1,0 +1,86 @@
+2/9/05 AA -- Enhancements
+
+* Better handling of entities across the board for fields that are
+  indexed by the perl scripts (as opposed to the external text
+  parser).  We should run everything through an ascii
+  ADS::Abstracts::Entities::Encoder.  After that we can ditch the
+  author translation rules
+
+* Automatic author synonym creation when an entity with multiple
+  transliterations is found (e.g. &auml;).  E.g. when the author
+	M&uuml;ller, A
+  is found we should generate the synonyms
+	MULLER, A
+	MUELLER, A
+  and merge them into the current synonym list.
+  The advantage in doing this over simply indexing both MULLER, A and
+  MUELLER, A for the paper in question is that the synonyming will
+  allow us to find this author using either spelling in records that
+  contain just one of the two ascii spellings.
+  Right now the only entities with multiple transliteration that I can
+  think of are the &[a-zA-Z]uml; ones
+
+* Full author index (just an idea so far): instead of normalizing
+  everything to the form "LASTNAME, F" we create an index containing
+  a normalized version of everybody's lastname, as it is in the text,
+  without truncation.  The matching to a plain last name or lastname +
+  f.i. (and even the synonyming) is then implemented during search
+  time.  This slows searches but keeps the index much smaller.
+  
+
+
+
+
+
+vvvvvvvvvvvvvvvvvvv DONE vvvvvvvvvvvvvvvvvv
+
+* makebib.pl 
+	-- compare results with current bib2accno.list, bibcodes.list.alt,
+	   additions
+
+	-- test options --{since,index}-pubdate and --{since,index}-entdate
+	   thoroughly
+
+
+* setup_index_cache.pl
+	-- files to be validated before cache is used:
+	   	- scripts
+	   	- parsers
+	   	- translation rules
+	   if any of these have changed, then the cache is invalid and
+	   cannot be used
+
+	-- cached word files are *.words in the old index directory and
+	   should be used if still fresh
+
+	-- cached data needs be file-based (i.e. keyed by accno rather
+	   than bibcode)
+
+* makeindexlist.pl
+	-- creates list of additions, deletions, updates to be used by
+	   indexing scripts
+
+* tokenizer.pl
+	-- pre-compile custom PERL function that does all the
+	   processing for each field to be indexed rather than
+	   cluttering the code with ifs
+
+	-- loop over @words doing all operations on a word-by-word
+	   basis rather than using multiple grep()
+
+
+* db_invert.pl
+	-- more efficient concatenation of binary identifiers in word
+	   hashes; see
+	   http://www.perl.com/pub/doc/manual/html/pod/perlfaq4.html#How_can_I_extract_just_the_uniqu
+
+	-- find an efficient mechanism to detect when it's time to
+	   flush out hashes to disk file so that memory is recovered
+	   for indexing additional fields.  
+
+- text parser is not happy with binary stuff (see, e.g. 1986JASS....3...53K)
+
+- doindex.sh:
+        -- in order to sort input files by ascending accno sequence number
+    	   (as in bib2accno), create temporary file with accno linenumber in
+	   place of accno and then use sort -n -t"	"

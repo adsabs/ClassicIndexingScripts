@@ -1,0 +1,99 @@
+#!/bin/sh
+#
+# Wrapper around doindex.sh to run mkcodes and mirroring after an index
+#
+
+script=`basename $0`
+docodes=/bin/true
+domirror=/bin/true
+domkop=/bin/true
+docmatch=/bin/true
+
+# writes an error message and exits
+die () {
+    echo "$script: fatal error: $1 occurred at " `date` 1>&2
+    exit 1
+}
+
+warn () {
+    echo "$script: $1 at " `date` 1>&2
+}
+
+while [ $# -ne 0 ] ; do
+    case "$1" in
+        --dryrun)
+            dryrun="$1" ;;
+        --no-codes)
+            docodes=/bin/false ;;
+        --no-mirror)
+            domirror=/bin/false ;;
+        --no-mkop)
+            domkop=/bin/false ;;
+        --no-docmatch)
+            docmatch=/bin/false ;;
+        --*)
+	    opt="$opt $1";;
+        *)
+            break ;;
+    esac
+    shift
+done
+
+# make sure we are on the right machine
+[ "x$ADS_ENVIRONMENT" = "x" ] && eval `$HOME/.adsrc sh`
+indexer="$ADS_INDEX_SERVER"
+
+[ "$indexer" = `uname -n` ] || \
+    die "this script needs to be run on host $indexer"
+
+if [ \( $# -lt 1 \) -o \( $# -gt 2 \) ] ; then
+    echo "Usage: $script [--no-cache] [--no-codes] [--no-mirror] [--dryrun] db [master]" 1>&2
+    exit 1
+fi
+
+
+date=`date +'%Y-%m-%d'`
+db=`echo "$1" | tr '[A-Z]' '[a-z]'`
+master=${2-/proj/ads/abstracts/$db/update/master.list}
+loaddir="/proj/ads/abstracts/$db/load/$date"
+indexdir="/proj/ads/abstracts/$db/index/done.$date"
+prevload=`readlink -f /proj/ads/abstracts/$db/load/current`
+
+warn "this script was called as: $0 $@ on host $indexer"
+
+dir=`dirname $0`
+$dir/doindex.sh $dryrun $opt --bytes "$db" "$master" "$loaddir" || \
+    die "error creating index"
+
+[ $dryrun ] && warn "dry run: exiting" && exit 0
+
+if $docodes ; then
+    warn "recreating codes"
+    $dir/mkcodes.sh -all -index $loaddir || \
+        die "mkcodes returned status of $?"
+fi
+
+$dir/bibsignature "$loaddir" "$indexdir" > "$loaddir/index.status.tmp.$$" || \
+    die "error creating index status"
+sort -fuo "$loaddir/index.status" "$loaddir/index.status.tmp.$$" || \
+    die "error sorting $loaddir/index.status"
+/bin/rm "$loaddir/index.status.tmp.$$"
+
+warn "Index is ready in directory $loaddir"
+
+version="latest"
+if $domkop ; then
+    $dir/mkop.sh $db || \
+	die "error running mkop $db"
+    version="current"
+fi
+
+if $domirror ; then
+    /proj/ads/ads/mirror/local/bin/mirror sites=ALL db="$db" \
+        update=text update="$version" batch=YES
+fi
+
+if $docmatch ; then
+    $dir/matchpp.sh $db $loaddir $prevload || \
+	warn "matchpp returned status of $?"
+fi

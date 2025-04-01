@@ -1,0 +1,89 @@
+#!/bin/sh
+# 
+# Process-based file locking:
+# Creates a file containing the PID of a process accessing a shared
+# resource and prevents other processes _on the same host_ from
+# accessing it.
+#
+# All this breaks down if the scripts are run on separate hosts
+# since PID checking won't work
+#
+# Usage: mklock [-s sleeptime] [-r retries] [-d lockdir] lockfile pid
+#
+
+p=`basename $0`
+
+die () {
+    echo "$p: fatal error: $1 occurred at " `date` 1>&2
+    exit 1
+}
+warn () {
+    echo "$p: warning: $@" 1>&2
+}
+usage () {
+    echo "$p: $@" 1>&2
+    echo "Usage: $p [-s sleeptime] [-r retries] [-d lockdir] lockfile pid" 1>&2
+    exit 1
+}
+
+dir=/tmp
+try=0
+sleeptime=10
+retries=0
+
+while [ $# -ne 0 ]; do
+    case "$1" in
+    -s)
+	shift
+	sleeptime="$1"
+	;;
+    -r)
+	shift
+	retries="$1"
+	;;
+    -d)
+	shift
+	dir="$1"
+	;;
+    -*)
+        usage "$p: unknown option \"$1\"" 1>&2
+        ;;
+    *) 
+	break
+	;;
+    esac
+    shift
+done
+
+lf=`echo "$1" | sed -e "s/\//_/g"`
+pid="$2"
+
+[ "x$lf"  = "x" ] && usage "no lockfile specified"
+[ "x$pid" = "x" ] && usage "no pid specified"
+if [ ! -d $dir ] ; then
+    warn "creating locking directory $dir"
+    mkdir $dir || die "cannot create locking directory $dir"
+fi
+
+while [ -f "$dir/$lf" ] ; do
+    oldpid=`cat $dir/$lf`
+    if [ "x$oldpid" = "x" ] ; then
+	warn "removing empty lock file $dir/$lf"
+	/bin/rm -f "$dir/$lf" || die "cannot remove $dir/$lf"
+    elif kill -0 $oldpid 2> /dev/null ; then
+	if [ $sleeptime -gt 0 -a $try -lt $retries ] ; then
+	    try=`expr $try + 1`
+	    warn "[$try/$retries] locking process detected (pid=$oldpid), sleep $sleeptime sec..."
+	    sleep $sleeptime
+	else
+	    warn "active locking process detected (pid=$oldpid), giving up"
+	    exit 3
+	fi
+    else
+	warn "removing stale lock file $dir/$lf"
+	/bin/rm -f "$dir/$lf" || die "cannot remove $dir/$lf"
+    fi
+done
+
+echo $pid > $dir/$lf || die "cannot create $dir/$lf"
+exit 0

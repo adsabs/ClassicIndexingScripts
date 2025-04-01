@@ -1,0 +1,343 @@
+#!/usr/bin/env perl
+#
+# $Id: bibsignature,v 1.3 2014/07/16 02:26:24 ads Exp ads $
+#
+# Usage: bibsignature load_dir > bibcode_signature
+#
+# AA 9/27/2011
+#
+# $Log: bibsignature,v $
+# Revision 1.3  2014/07/16 02:26:24  ads
+# optimized test of fulltext files via use of perl's "_" magic
+#
+# Revision 1.2  2013/01/30 22:19:50  ads
+# Implemented incremental update via --update and --status-file
+#
+# Revision 1.1  2012/06/05 00:28:08  ads
+# Initial revision
+#
+#
+
+use strict;
+use warnings;
+use ADS::Environment;
+use ADS::Abstracts::Biblooker;
+use ADS::Abstracts::Simple qw( AbsFile );
+use File::Pairtree qw( id2ppath );
+use integer;
+use JSON;
+
+select *STDERR; $| = 1; select *STDOUT; $| = 1;
+
+my $script = $0; $script =~ s:^.*/::;
+my @dbs = split(/\s+/,$ENV{ADS_DATABASES});
+my $absdir = $ENV{ADS_ABSTRACTS};
+my $debug = 0;
+my $reffile = $ENV{ADS_REFERENCES} . '/links/citing2file.dat';
+my $refsources = $ENV{ADS_REFERENCES} . '/resolved';
+my $ftsources = '/proj/ads/fulltext/extracted';
+my $bibs;
+
+# top-level dir for fulltext files
+$File::Pairtree::root = $ftsources;
+
+my $usage = <<"EOF";
+Usage: $script [OPTIONS] db | load_dir [index_dir]
+This script generates a signature file (aka "timestamp file") for
+all the records in an ADS classic index.  It does so by reading the
+master.bib file associated with the index and outputting on STDOUT
+a two-column table consisting of bibcodes and a JSON structure which
+captures the bibliographic information of the record, namely:
+ * abstract   - pathnames and timestamp of abstract files
+ * references - pathnames and timestamp of reference files
+ * links      - typed links to external resources
+ * properties - bibliographic groups, refereed status, etc.
+The signature used to include information about fulltext files,
+but this has been removed as of 4/6/2015 since that is taken care
+of by a new update/queue process.  To force the inclusion of
+fulltext files in the output, use the '--fulltext' option
+
+Options:
+  --debug            be verbose
+  --bibmaster FILE   use FILE as input master.bib
+  --fulltext         include information on fulltext files (deprecated)
+  --references       include content from references files (deprecated)
+  --update           read current signature file, and update or add signature
+                     for records whose bibcodes are entered in STDIN
+  --status-file FILE use FILE as the input signature file
+EOF
+    ;
+
+my $ufile;
+my $partial_update = 0;
+my $dofulltext = 0;
+my $doreferences = 0;
+while (@ARGV and $ARGV[0] =~ /^\-./) {
+    my $s = shift(@ARGV);
+    if ($s eq '--help') {
+	die $usage;
+    } elsif ($s eq '--bibmaster') {
+	$bibs = shift(@ARGV);
+    } elsif ($s eq '--update') {
+	$partial_update = 1;
+    } elsif ($s eq '--fulltext') {
+	$dofulltext = 1;
+    } elsif ($s eq '--references') {
+	$doreferences = 1;
+    } elsif ($s eq '--status-file') {
+	$ufile = shift(@ARGV);
+    } elsif ($s eq '--debug') {
+	$debug++;
+    } else {
+	die "Unknown option `$s'\n$usage";
+    }
+}
+
+my $loaddir;
+my $db;
+my $arg = shift(@ARGV) or die $usage;
+my $json = JSON->new;
+
+if (grep(/\b$arg\b/i, $ENV{ADS_DATABASES})) {
+    # arg is a database
+    $db = lc($arg);
+    $loaddir = "$ENV{ADS_ABSTRACTS}/$db/load/current";
+} else {
+    $loaddir = $arg;
+    $db = (split(m:/:,$loaddir))[-3];
+}
+
+die "$script: $loaddir not a directory!" unless (-d $loaddir);
+
+my $bibhash = {};
+my $fh;
+my $n = 0;
+my $nft = 0;
+
+warn "$script: execution starting at ", scalar localtime(time), "\n";
+
+# find out where the index directory is
+my $indexdir = shift(@ARGV);
+unless ($indexdir) {
+    my $tsfile = "$loaddir/TIMESTAMP.start";
+    open($fh, $tsfile) or die "$script: cannot open file $tsfile: $!";
+    my $rec = <$fh>;
+    undef($fh);
+    my ($date,$time) = split(/\s+/,$rec);
+    $indexdir = "$ENV{ADS_ABSTRACTS}/$db/index/done.$date";
+}
+die "$script: working index directory $indexdir not found" unless (-d $indexdir);
+
+warn "$script: database is $db\n";
+warn "$script: load  directory is $loaddir\n";
+warn "$script: index directory is $indexdir\n";
+
+my %update;
+my %updatebibs = ();
+if ($partial_update) {
+    # we are updating the list of bibcodes, read in our signature structure
+    $ufile ||= "$loaddir/index.status";
+    die "$script: signature file $ufile not found, required in update mode\n"
+	unless (-f $ufile);
+    # read in list of bibcodes to update
+    $n = 0;
+    while (<STDIN>) {
+	my ($bib) = split;
+	$update{$bib} = 1;
+	$n++;
+    }
+    warn "$script: read list of $n bibcodes to update from STDIN\n";
+    open($fh, $ufile) or die "$script: cannot open signature file $ufile: $!";
+    $n = 0;
+    while (<$fh>) {
+	chop;
+	my ($bib,$sig) = split(/\t/,$_,2);
+	next if ($update{$bib});
+	$bibhash->{$bib} = $json->utf8->decode($sig);
+	$n++;
+    }
+    warn "$script: read $n records from signature file $ufile\n";
+}
+
+# read timestamps for metadata files from accnos.input
+warn "$script: checking abstract files at ", scalar localtime(time), "\n";
+
+$bibs = "$indexdir/master.bib" unless ($bibs);
+my %alt2bib = ();
+$n = 0;
+open($fh, $bibs) or die "$script: cannot open file $bibs: $!";
+while (<$fh>) {
+    chop;
+    my ($bib,$path,$ts,$alt) = split;
+    next if ($partial_update and not $update{$bib});
+    my $hash = { p => $path, t => $ts };
+    # this is the primary metadata file
+    $alt ||= '';
+    if ($alt eq 'primary') {
+	$hash->{primary} = 1;
+    } elsif ($alt) {
+	$alt2bib{$alt} = $bib;
+	$hash->{a} = $alt;
+    }
+    $bibhash->{$bib}->{abs} ||= [];
+    push(@{$bibhash->{$bib}->{abs}}, $hash);
+    $updatebibs{$bib} = 1;
+    $n++;
+}
+undef($fh);
+warn "$script: finished checking $n abstract files at ", scalar localtime(time), "\n";
+
+if ($dofulltext) {
+    # load timestamps for fulltext files
+    warn "$script: checking fulltext files at ", scalar localtime(time), "\n";
+    $n = 0;
+    foreach my $bib (sort keys %updatebibs) {
+	# check for fulltext
+	my $path = id2ppath($bib);
+	my $ts = 0;
+	warn "$script: checking fulltext directory $path\n" if ($debug);
+	opendir(my $dh, $path) or next;
+	foreach (readdir($dh)) {
+	    next if (/^\./);
+	    my $f = "$path/$_";
+	    next unless (-f $f);
+	    $ts = (stat(_))[9];
+	    my $hash = { p => "$f", t => $ts };
+	    $n++;
+	    $bibhash->{$bib}->{full} ||= [];
+	    push(@{$bibhash->{$bib}->{full}}, $hash);
+	}
+    }
+    warn "$script: finished checking $n fulltext files at ", scalar localtime(time), "\n";
+}
+
+if ($doreferences) {
+    # load timestamps for references
+    warn "$script: checking reference files at ", scalar localtime(time), "\n";
+    open($fh, $reffile) or die "$script: cannot open file $reffile: $!";
+    $n = 0;
+    while (<$fh>) {
+	chop;
+	my ($orig,$file) = split;
+	my $bib = $alt2bib{$orig} || $orig;
+	next if ($partial_update and not $update{$bib});
+	next unless ($bibhash->{$bib});
+	my $path = "$refsources/$file.result";
+	unless (-f $path) { 
+	    warn "$script: $bib: cannot find reffile $path\n";
+	    next;
+	}
+	my $ts = (stat($path))[9];
+	my $hash = { p => $path, t => $ts };
+	$bibhash->{$bib}->{refs} ||= []; 
+	push(@{$bibhash->{$bib}->{refs}}, $hash);
+	$n++;
+    }
+    undef($fh);
+    warn "$script: finished checking $n reference files at ", scalar localtime(time), "\n";
+}
+
+# create list of properties
+# the data is in files named XXX_codes in index directory
+my @skip_codes = qw( abstract alsoread_bib citation fulltext 
+                     newarticle priv reads reference VERSION );
+my %skip = map { ($_,1) } @skip_codes;
+my %pfile;
+foreach my $file (<$loaddir/*_codes>) {
+    my $c = (split(/\//,$file))[-1];
+    $c =~ s/_codes$//;
+    next if ($skip{$c});
+    next if ($c =~ /^facet_/);
+    # for bibgliographic groups, grab real name
+    if ($c =~ /^bibgroup_/) {
+	my $file = "$ENV{ADS_ABSCONFIG}/links/$c/NAME";
+	open($fh,$file) or die "$script: error opening file $file: $!";
+	my $name = <$fh>; 
+	$name =~ s/^\s+|\s+$//g;
+	$c = "bibgroup: $name";
+    }
+    $pfile{$c} = $file;
+}
+
+warn "$script: checking codes files at ", scalar localtime(time), "\n";
+$n = 0;
+my $dummy;
+foreach my $pname (sort keys %pfile) {
+    my $boolean = 0;
+    my $file = $pfile{$pname};
+    my $countfile = undef;
+    # if there are index and list files in the version indep
+    # directory then grab the corresponding values from those
+    # files, otherwise the property only has a boolean value
+    my $index = "$ENV{ADS_ABSTRACTS}/links/".$pname."_link.index";
+    if (-f $index) {
+	$file = "$ENV{ADS_ABSCONFIG}/links/$pname/all.links";
+	$countfile = "$ENV{ADS_ABSCONFIG}/links/$pname/all.counts";
+	$countfile = undef unless (-f $countfile);
+    } else {
+	$boolean = 1;
+    }
+    warn "$script: reading properties from file $file\n";
+    open($fh, $file) or die "$script: error opening file $file: $!";
+    if ($boolean) {
+	$dummy = <$fh>;
+	while (<$fh>) {
+	    chop;
+	    my ($orig) = split;
+	    my $bib = $alt2bib{$orig} || $orig;
+	    next if ($partial_update and not $update{$bib});
+	    next unless ($bibhash->{$bib});
+	    $bibhash->{$bib}->{prop} ||= [];
+	    push(@{$bibhash->{$bib}->{prop}},$pname);
+	}
+    } else {
+	while (<$fh>) {
+	    chop;
+	    my ($orig,$rest) = split(/\t/,$_,2);
+	    next unless ($orig and $rest);
+	    my $bib = $alt2bib{$orig} || $orig;
+	    next if ($partial_update and not $update{$bib});
+	    next unless ($bibhash->{$bib});
+	    my ($url,$title);
+	    if ($rest) {
+		($url,$title) = split(/\s+/,$rest,2);
+	    } else {
+		warn "$script: warning: $pname: no content for $orig\n";
+	    }
+	    $bibhash->{$bib}->{links} ||= {};
+	    $bibhash->{$bib}->{links}->{$pname} ||= [];
+	    my $dict = {};
+	    $dict->{u} = $url if ($url);
+	    $dict->{t} = $title if ($title);
+	    push(@{$bibhash->{$bib}->{links}->{$pname}},$dict); 
+	    #warn "$script: $bib: found $pname property: url:$url, title:$title\n" 
+		#if ($debug);
+	}
+    }	
+    undef($fh);
+    # see if we need to read counts for links
+    if ($countfile) {
+	open($fh, $countfile) or die "$script: error opening file $countfile: $!";
+	while (<$fh>) {
+	    chop;
+	    my ($orig,$count) = split(/\s+/,$_,2);
+	    my $bib = $alt2bib{$orig} || $orig;
+	    next if ($partial_update and not $update{$bib});
+	    next unless ($bibhash->{$bib});
+	    # count only applies to first link
+	    $bibhash->{$bib}->{links}->{$pname}->[0]->{c} = $count;
+	}
+	undef($fh);
+    }
+    $n++;
+}
+warn "$script: finished checking $n property files at ", scalar localtime(time), "\n";
+
+$n = 0;
+foreach my $bib (sort keys %{$bibhash}) {
+    print $bib, "\t", $json->utf8->canonical->encode($bibhash->{$bib}), "\n";
+    $n++;
+}
+
+warn "$script: written $n records to stdout at ", scalar localtime(time), "\n";
+
