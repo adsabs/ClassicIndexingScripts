@@ -143,8 +143,8 @@ perl -MPOSIX -pi -e '
 # copy back the new master list
 if [ "x$dryrun" != "xYES" ] ; then
     cd $orig_dir
-    cp "$indexdir/$master" $orig_master || \
-		    die "cannot copy $master to $orig_master"
+    rsync -av "$indexdir/$master" $orig_master || \
+	die "cannot copy $master to $orig_master"
     cd $indexdir
 fi
 
