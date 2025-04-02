@@ -1,13 +1,5 @@
 #!/bin/sh
 #
-# $Id: mkop,v 1.1 2004/01/30 18:51:23 ads Exp ads $
-#
-# Makes an index operational
-#
-# $Log: mkop,v $
-# Revision 1.1  2004/01/30 18:51:23  ads
-# Initial revision
-#
 #
 script=`basename $0`
 
@@ -24,26 +16,6 @@ EOF
 die () {
     echo "$script: fatal error: $1" 1>&2
     exit 1
-}
-
-getvers () {
-    [ "x$1" = "x" ] && return 1
-    db=`echo $1 | tr '[A-Z]' '[a-z]'`
-    config="$DOCUMENT_ROOT/config/abs_config.$db"
-    [ -f $config ] || return 2
-    v=`grep '^VERS_DIRECTORY' $config | sed -e 's:^.*=::' -e 's:/*$::'`
-    [ "x$v" = "x" ] && return 3
-    echo "$v"
-}
-
-getload () {
-    [ "x$1" = "x" ] && return 1
-    db=`echo $1 | tr '[A-Z]' '[a-z]'`
-    config="$DOCUMENT_ROOT/config/abs_config.$db"
-    [ -f $config ] || return 2
-    v=`grep '^HTTPD_BIN' $config | sed -e 's:^.*=::' -e 's:/*$::'`
-    [ "x$v" = "x" ] && return 3
-    echo "$v"
 }
 
 get_dir () {
@@ -70,7 +42,8 @@ done
 
 db=`echo "$1" | tr '[A-Z]' '[a-z]'`
 [ "x$db" = "x" ] && usage
-current=`getvers $db` || die "cannot get current version for db $db"
+
+current="$ADS_ABSTRACTS/$db/load/current"
 [ -d "$current" ] || die "directory $current does not exist!"
 version=${2-latest}
 basedir=`dirname $current`
@@ -104,15 +77,4 @@ else
 fi
 
 [ "x$load" = "x" ] && exit 0
-
-# reload segments
-cgidir=`getload $db` || \
-    die "cannot get location of cgi directory for $db"
-loadsh="$cgidir/maint/load_sh"
-[ -x "$loadsh" ] || die "executable $loadsh not found"
-
-if [ "x$ADS_IS_ABSTRACT_SERVER" != "x" ] ; then
-    # XXX don't bother loading in memory any more
-    echo skipping $loadsh $db || die "$loadsh exited with status of $?"
-fi
 

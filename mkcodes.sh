@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 # $Id: mkcodes.sh,v 1.6 2011/01/10 07:12:58 ads Exp ads $
 #
