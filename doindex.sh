@@ -56,7 +56,8 @@ Example:
 EOF
     exit 1
 }
-dir=`dirname $0`
+fullscript=`readlink -f $0`
+dir=`dirname $fullscript`
 export PATH="$dir:$PATH"
 
 # LC_ALL should already be set to C, but just in case...
