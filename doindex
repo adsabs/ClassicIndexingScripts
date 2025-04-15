@@ -5,8 +5,7 @@
 
 script=`basename $0`
 docodes=/bin/true
-domirror=/bin/false
-domkop=/bin/false
+domkop=/bin/true
 docmatch=/bin/true
 
 # writes an error message and exits
@@ -25,8 +24,6 @@ while [ $# -ne 0 ] ; do
             dryrun="$1" ;;
         --no-codes)
             docodes=/bin/false ;;
-        --no-mirror)
-            domirror=/bin/false ;;
         --no-mkop)
             domkop=/bin/false ;;
         --no-docmatch)
@@ -47,7 +44,7 @@ indexer="$ADS_INDEX_SERVER"
     warn "this script should preferentially be be run on host $indexer"
 
 if [ \( $# -lt 1 \) -o \( $# -gt 2 \) ] ; then
-    echo "Usage: $script [--no-cache] [--no-codes] [--no-mirror] [--dryrun] db [master]" 1>&2
+    echo "Usage: $script [--no-cache] [--no-codes] [--dryrun] db [master]" 1>&2
     exit 1
 fi
 
@@ -85,11 +82,6 @@ if $domkop ; then
     $dir/mkop.sh $db || \
 	die "error running mkop $db"
     version="current"
-fi
-
-if $domirror ; then
-    /proj/ads/ads/mirror/local/bin/mirror sites=ALL db="$db" \
-        update=text update="$version" batch=YES
 fi
 
 if $docmatch ; then
