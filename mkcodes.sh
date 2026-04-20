@@ -766,7 +766,13 @@ for links in $items ; do
     list="$linksdir/"$links"_link.list"
     count="$linksdir/"$links"_link.count"
 
-    echo "$p: processing files in directory $datadir at "`date`
+    if [ -f "$datadir/SKIP" ] ; then 
+        vecho "skipping creation of codes files for $links"
+	continue
+    else
+	echo "$p: processing files in directory $datadir at "`date`	
+    fi
+
     cd $datadir
 
     vecho "creating lock file for $links"
