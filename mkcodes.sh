@@ -1057,12 +1057,12 @@ if [ "x$nocodes" = "x" ] ; then
     done
 fi
 
-if [ "x$reload" != "x" ] ; then
-    for s in $ADS_SEGMENTS ; do
-	echo "$p: reloading shared memory segments ($s)"
-	$HTTPD_BIN/maint/load_sh $s
-    done
-fi
+#if [ "x$reload" != "x" ] ; then
+#    for s in $ADS_SEGMENTS ; do
+#	echo "$p: reloading shared memory segments ($s)"
+#	$HTTPD_BIN/maint/load_sh $s
+#    done
+#fi
 
 
 [ "x$mirror" != "x" ] && \
