@@ -31,7 +31,7 @@
 #
 
 script=`basename $0`
-DMSERVER=adsnest
+DMSERVER="adsnest"
 
 # writes an error message and exits
 die () {
