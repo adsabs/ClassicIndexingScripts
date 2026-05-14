@@ -76,5 +76,5 @@ else
 	die "cannot create link $current -> $realdir in $basedir"
 fi
 
-[ "x$load" = "x" ] && exit 0
-
+#[ "x$load" = "x" ] && exit 0
+exit 0
