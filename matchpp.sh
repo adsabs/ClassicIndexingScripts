@@ -31,6 +31,7 @@
 #
 
 script=`basename $0`
+DMSERVER=adsnest
 
 # writes an error message and exits
 die () {
@@ -105,7 +106,7 @@ warn "submitting the list of "`wc -l < $ilist`" metadata records to docmatch scr
 
 command="/usr/local/bin/rjob -j process python3 /app/run.py -me -p"`pwd`"/"
 
-remote="adsnest docker exec -i -u ads backoffice_prod_doc_matching_pipeline_1 bash -l -s"
+remote="$DMSERVER docker exec -i -u ads backoffice_prod_doc_matching_pipeline_1 bash -l -s"
 
 echo "$script: executing \"$command\" via: \"ssh $remote\""
 echo "$command" | ssh $remote || \
@@ -133,7 +134,7 @@ cat $clout >> $ADS_ABSTRACTS/sources/ArXiv/published/matches_pub2pre.list
 # Upload matches in $clout to oracledb
 command="/usr/local/bin/rjob -j process python3 /app/run.py -mf $clout -as ADS"
 
-remote="adsnest docker exec -i -u ads backoffice_prod_doc_matching_pipeline_1 bash -l -s"
+remote="$DMSERVER docker exec -i -u ads backoffice_prod_doc_matching_pipeline_1 bash -l -s"
 
 echo "$script: executing \"$command\" via: \"ssh $remote\""
 echo "$command" | ssh $remote || \
