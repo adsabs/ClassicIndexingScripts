@@ -124,7 +124,7 @@ if [ -s "$upfile.tmp" ] ; then
 
 
     for file in $topdir/meta/arxiv_* ; do
-        f="$load/"`basename $file`"_codes"
+        f="$indexdir/"`basename $file`"_codes"
         join -o 1.2 $mapfile $file | sort -fu > "$f" || \
             die "cannot join $mapfile and $file into $f"
         $bindir/addcount.sh --lines "$f" || \
