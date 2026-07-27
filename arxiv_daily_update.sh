@@ -47,10 +47,6 @@ laststatus="$lastdir/index.status"
 
 timestamp=`date -I -d "-1 day"`
 
-# do a quick rsync of the top master dirs before harvest launches
-if [ -x "$bindir/rsync_arx.sh" ] ; then
-    $bindir/rsync_arx.sh
-fi
 
 warn "update started"
 warn "updating dataset $dataset in dir $topdir"
@@ -58,14 +54,8 @@ cd $topdir || die "cannot cd to $topdir"
 
 LOGDIR="$topdir/log/$timestamp"; export LOGDIR
 upfile="$LOGDIR/parse.out"
-parselog="$LOGDIR/parse.log"
-harvestlog="$LOGDIR/harvest.log"
 newrecs="$LOGDIR/new_records.tsv"
-newabs="$LOGDIR/abstracts_daily.tsv"
 
-
-sleeptimeout=10800
-sleepdelay=600
 
 [ -d $LOGDIR ] || mkdir "$LOGDIR"
 [ -d $LOGDIR ] || die "cannot create directory $LOGDIR"
@@ -74,35 +64,31 @@ warn "output file is $upfile"
 warn "log dir is $LOGDIR"
 
 
-# the timeout loop is based on whether there's a parse.out file on /proj/ads
-CLASSICDIR="/proj/ads/abstracts/sources/ArXiv/"
-classicupfile="$CLASSICDIR/log/$timestamp/parse.out"
-classicparselog="$CLASSICDIR/log/$timestamp/parse.log"
-classicnewrecs="$CLASSICDIR/log/$timestamp/new_records.tsv"
-classicnewabs="$CLASSICDIR/log/$timestamp/abstracts_daily.tsv"
+# The timeout loop is based on whether there's a parse.out.tmp file on /proj/ads
+# and will continue this check every 10 minutes until it times out after
+# three hours.
 
+sleeptimeout=10800
+sleepdelay=600
 totdelay=0
-while /bin/true ; do
-    if [ -f "$classicupfile.tmp" ] ; then
-        warn "Found input files on /proj/ads, copying now."
-        cp "$classicupfile.tmp" "$upfile.tmp"
-        cp $classicparselog $parselog
-        cp $classicnewrecs $newrecs
-        cp $classicnewabs $newabs
-    fi
 
-    if [ -f $newrecs ] ; then
-        warn "found "`wc -l < $newrecs`" new records"
-        break
-    elif [ $totdelay -ge $sleeptimeout ] ; then
-        warn "timed out looking for new records"
-        exit 1
-    else
-        warn "sleeping $sleepdelay seconds"
-        sleep $sleepdelay
-        totdelay=$(($totdelay + $sleepdelay))
+while /bin/true ; do
+    if [ -f "$upfile.tmp" ] ; then
+
+        if [ -f $newrecs ] ; then
+            warn "found "`wc -l < $newrecs`" new records"
+            break
+        elif [ $totdelay -ge $sleeptimeout ] ; then
+            warn "timed out looking for new records"
+            exit 1
+        else
+            warn "sleeping $sleepdelay seconds"
+            sleep $sleepdelay
+            totdelay=$(($totdelay + $sleepdelay))
+        fi
     fi
 done
+
 
 if [ -s "$upfile.tmp" ] ; then
 
@@ -181,4 +167,5 @@ if [ -s "$upfile.tmp" ] ; then
     warn "update completed on "`date`
 else
     warn "no output file generated"
+    exit 1
 fi
