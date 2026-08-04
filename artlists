@@ -47,9 +47,9 @@ find $toplevdirs -follow -type d -mindepth 2 -maxdepth 2 -print | \
     while read volume ; do
 	[ -f "$volume/dont.mirror" ] && continue
 	[ -f "$volume/../dont.mirror" ] && continue
-        case $vol in
-            *.bck) continue;;
-        esac
+	case $vol in
+	    *.bck) continue;;
+	esac
 	echo "$volume"
     done | \
 	sort > ./volumes.list
