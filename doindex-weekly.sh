@@ -14,7 +14,13 @@ die () {
 db="$1"
 [ "x$db" = "x" ] && die "usage: $script DB"
 
-master="$ADS_ABSTRACTS/$db/update/master.list"
+# the pre index needs to point to sources/ArXiv/meta/master.list
+if [ $db = "pre" ]; then
+    master="$ADS_ABSTRACTS/sources/ArXiv/meta/master.list"
+else
+    master="$ADS_ABSTRACTS/$db/update/master.list"
+fi
+
 [ -f $master ] || die "master list $master not found"
 logfile="$ADS_ABSTRACTS/$db/index/LOGS/"`date '+%F'`".log"
 cd "$ADS_ABSTRACTS/$db/index"
