@@ -1,0 +1,91 @@
+#!/bin/sh
+#
+# $Id: artlists,v 1.3 2012/06/27 12:34:47 alberto Exp alberto $
+#
+# $Log: artlists,v $
+# Revision 1.4  2026/08/04 12:00:00  mtemplet
+# replaced "[[ statement ]]" construct with POSIX compliant "case"
+#
+# Revision 1.3  2012/06/27 12:34:47  alberto
+# Added creation of pdfs.list
+#
+# Revision 1.2  2001/08/31 17:44:33  alberto
+# added "work" to the list of top-level directories
+#
+# Revision 1.1  2001/02/06 22:03:54  alberto
+# Initial revision
+#
+#
+
+script=`basename $0`
+die () {
+    echo "$script: $1" 1>&2 ; exit 1
+}
+warn () {
+    echo "$script: $1"
+}
+
+bindir=`dirname $0` ; [ "$bindir" = "." ] && bindir=""
+# if bindir is a relative path, append current working directory
+echo "$bindir" | grep -s -q '^/' || bindir=`pwd`"/$bindir"
+
+# get environment for ADS services
+[ "x$ADS_ENVIRONMENT" = "x" ] && [ -x "$HOME/.adsrc" ] && eval `$HOME/.adsrc sh`
+cd $ADS_ARTICLES/bitmaps || \
+    die "cannot change directory to $ADS_ARTICLES/bitmaps"
+if [ -f pubtypes.list ] ; then
+    toplevdirs=`cat pubtypes.list`
+else 
+    toplevdirs="book conf proc seri work"
+fi
+
+ocrdir="$ADS_ARTICLES/ocr/full"
+[ -d "$ocrdir" ] || die "OCR directory $ocrdir not found!"
+
+# first generate list of volumes
+find $toplevdirs -follow -type d -mindepth 2 -maxdepth 2 -print | \
+    while read volume ; do
+	[ -f "$volume/dont.mirror" ] && continue
+	[ -f "$volume/../dont.mirror" ] && continue
+        case $vol in
+            *.bck) continue;;
+        esac
+	echo "$volume"
+    done | \
+	sort > ./volumes.list
+
+[ -s volumes.list ] || die "volumes.list is empty"
+
+cat ./volumes.list | \
+    while read volume ; do
+        count=`find "$volume/600" -regex '.*/...........' 2>/dev/null | wc -l`
+	printf "%s\t%d\n" $volume $count
+    done \
+	> ./volumes.count
+
+[ -s volumes.count ] || die "volumes.count is empty"
+
+cat ./volumes.list | \
+    while read volume ; do
+        [ -d "$ocrdir/$volume" ] || continue
+	echo "$volume"
+    done | \
+        sort > ./ocrvolumes.list
+
+[ -s ocrvolumes.list ] || die "ocrvolumes.list is empty"
+
+find $toplevdirs -follow -type d -mindepth 1 -maxdepth 1 -print | \
+    while read pub ; do
+	[ -f "$pub/dont.mirror" ] && continue
+	echo "$pub"
+    done | \
+	sort > ./publications.list
+
+[ -s publications.list ] || die "publications.list is empty"
+
+$bindir/pdflist > ./pdfs.list.$$ || die "creating pdfs.list"
+sort -fuo ./pdfs.list ./pdfs.list.$$ || die "cannot sort pdfs.list"
+/bin/rm ./pdfs.list.$$ || die "cannot remove pdfs.list.$$"
+
+exit 0
+
