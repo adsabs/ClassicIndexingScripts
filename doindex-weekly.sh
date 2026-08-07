@@ -26,7 +26,11 @@ logfile="$ADS_ABSTRACTS/$db/index/LOGS/"`date '+%F'`".log"
 cd "$ADS_ABSTRACTS/$db/index"
 echo $script started at `date`
 
-$dir/doindex $db $master > $logfile 2>&1 || \
+nodm=""
+if [ "$db" = "gen" ]; then
+    nodm="--no-docmatch"
+fi
+$dir/doindex $nodm $db $master > $logfile 2>&1 || \
     die "error running index for $db"
 
 echo $script ended at `date`
