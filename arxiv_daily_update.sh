@@ -26,6 +26,14 @@ checklog () {
     [ $w -gt 0 ] && warn "found $w warnings in log file $log"
 }
 
+# set environment for kubernetes containerization
+# The container image must have an abbreviated .adsrc file in /app
+
+[ "x$ADS_ENVIRONMENT" = "x" ] && [ -x "/app/.adsrc" ] && eval `/app/.adsrc sh`
+
+PATH="$dir:$PATH"
+export PATH
+
 bindir=`dirname $0` ; [ "$bindir" = "." ] && bindir=""
 # if bindir is a relative path, append current working directory
 echo "$bindir" | grep -s -q '^/' || bindir=`pwd`"/$bindir"
@@ -47,28 +55,24 @@ laststatus="$lastdir/index.status"
 
 timestamp=`date -I -d "-1 day"`
 
-
 warn "update started"
 warn "updating dataset $dataset in dir $topdir"
 cd $topdir || die "cannot cd to $topdir"
+
+# note, LOGDIR is created by the harvester -- assume it is present
 
 LOGDIR="$topdir/log/$timestamp"; export LOGDIR
 upfile="$LOGDIR/parse.out"
 newrecs="$LOGDIR/new_records.tsv"
 
-
-[ -d $LOGDIR ] || mkdir "$LOGDIR"
-[ -d $LOGDIR ] || die "cannot create directory $LOGDIR"
-
 warn "output file is $upfile"
 warn "log dir is $LOGDIR"
 
-
 # The timeout loop is based on whether there's a parse.out.tmp file on /proj/ads
 # and will continue this check every 10 minutes until it times out after
-# three hours.
+# two hours.
 
-sleeptimeout=10800
+sleeptimeout=7200
 sleepdelay=600
 totdelay=0
 
